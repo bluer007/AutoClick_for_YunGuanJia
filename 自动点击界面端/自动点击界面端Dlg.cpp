@@ -170,6 +170,9 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 	//this->enumProcess();		//刷新进程列表
 	CListBox *m_CListBox = ((CListBox*)GetDlgItem(IDC_LIST1));
 	CString str;
+	CString a;
+	BOOL isFind = FALSE;
+	int iadf = m_CListBox->GetCurSel();
 	if (LB_ERR == m_CListBox->GetCurSel() || 0 == m_CListBox->GetCurSel())
 	{
 		//选择第一项"不选".  或者真正没有选, 就默认 针对 管家
@@ -182,8 +185,18 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 				//开始提取pid
 				str = str.Right(str.GetLength() - str.Find(_T("PID")) - 4);
 				str.Format(_T("%d"), _ttol(str.GetBuffer()));
+				isFind = TRUE;
 				break;
 			}
+		}
+		if (!isFind)
+		{
+			if (LB_ERR == m_CListBox->GetCurSel() || 0 == m_CListBox->GetCurSel())
+				str.SetString(_T("找不到 云管家(baiduyunguanjia.exe) 进程"));
+			else
+				str.Format(_T("找不到 %s 进程"), str.GetBuffer());
+			AfxMessageBox(str.GetBuffer());
+			return;
 		}
 	}
 	else
@@ -200,10 +213,63 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 	if ((hRemoteProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, _ttol(str.GetBuffer()))) == NULL)
 	{
 		AfxMessageBox(_T("OpenProcess()其他进程出错了"));
-		return;
+		goto FINAL;
+	}
+	//在远程进程中分配内存，准备拷入DLL路径字符串
+	//取得当前DLL路径
+	TCHAR DllPath[MAX_PATH];							//Windows路径最大为MAX_PATH(260)
+	GetCurrentDirectory(MAX_PATH, DllPath);				 //获取当前进程执行目录
+	_tcscat_s(DllPath, MAX_PATH, _T("\\hook.dll"));		//链接到DLL路径
+	LPVOID pRemoteDllPath = VirtualAllocEx(hRemoteProcess, NULL, _tcslen(DllPath) + 1, MEM_COMMIT, PAGE_READWRITE);
+	if (pRemoteDllPath == NULL)
+	{
+		AfxMessageBox(_T("VirtualAllocEx()出错了"));
+		goto FINAL;
+	}
+	
+	a.Format(_T("%s"), DllPath);
+	AfxMessageBox(a.GetBuffer());
+	//向远程进程空间中写入DLL路径字符串
+	DWORD Size;
+	if (WriteProcessMemory(hRemoteProcess, pRemoteDllPath, DllPath, (_tcslen(DllPath) + 1) * sizeof(DllPath[0]), &Size) == NULL)
+	{
+		AfxMessageBox(_T("WriteProcessMemory()出错了"));
+		goto FINAL;
+	}
+	a.Format(L"%d", Size);
+	AfxMessageBox(a.GetBuffer());
+	//获得远程进程中LoadLibrary()的地址
+	LPTHREAD_START_ROUTINE pLoadLibrary = (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "LoadLibraryW");
+	if (pLoadLibrary == NULL)
+	{
+		AfxMessageBox(_T("GetProcAddress()出错了"));
+		goto FINAL;
+	}
+	//启动远程线程
+	DWORD dwThreadId;
+	HANDLE hThread;
+	if ((hThread = CreateRemoteThread(hRemoteProcess, NULL, 0, pLoadLibrary, pRemoteDllPath, 0, &dwThreadId)) == NULL)
+	{
+		AfxMessageBox(_T("CreateRemoteThread()出错了"));
+		goto FINAL;
+	}
+	else
+	{
+		WaitForSingleObject(hThread, INFINITE);
+		//printf("dwThreadId is %d\n\n", dwThreadId);
+		//printf("Inject is done\n");
+	}
+	//释放分配内存
+	if (VirtualFreeEx(hRemoteProcess, pRemoteDllPath, 0, MEM_RELEASE) == 0)
+	{
+		AfxMessageBox(_T("VirtualFreeEx()出错了"));
+		goto FINAL;
 	}
 
-
+FINAL:
+	//释放句柄
+	if (hThread != NULL) CloseHandle(hThread);
+	if (hRemoteProcess != NULL) CloseHandle(hRemoteProcess);
 }
 
 
