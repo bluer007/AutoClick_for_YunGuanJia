@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.22310.1
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "云管家自动点击", "云管家自动点击\云管家自动点击.vcxproj", "{CA59652E-38A1-4B94-8322-4241FE7352A8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "自动点击界面端", "自动点击界面端\自动点击界面端.vcxproj", "{25DFE111-585A-449B-8BC8-EEE36EFFB8AE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CA59652E-38A1-4B94-8322-4241FE7352A8}.Debug|Win32.ActiveCfg = Debug|Win32
+		{CA59652E-38A1-4B94-8322-4241FE7352A8}.Debug|Win32.Build.0 = Debug|Win32
+		{CA59652E-38A1-4B94-8322-4241FE7352A8}.Release|Win32.ActiveCfg = Release|Win32
+		{CA59652E-38A1-4B94-8322-4241FE7352A8}.Release|Win32.Build.0 = Release|Win32
+		{25DFE111-585A-449B-8BC8-EEE36EFFB8AE}.Debug|Win32.ActiveCfg = Debug|Win32
+		{25DFE111-585A-449B-8BC8-EEE36EFFB8AE}.Debug|Win32.Build.0 = Debug|Win32
+		{25DFE111-585A-449B-8BC8-EEE36EFFB8AE}.Release|Win32.ActiveCfg = Release|Win32
+		{25DFE111-585A-449B-8BC8-EEE36EFFB8AE}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
