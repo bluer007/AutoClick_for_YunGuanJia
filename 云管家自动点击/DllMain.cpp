@@ -11,6 +11,7 @@
 #include <tchar.h>
 #include <assert.h>
 #include <process.h>
+#include <tlhelp32.h>			////枚举进程头文件
 
 
 //全局共享变量
@@ -27,13 +28,16 @@
 HANDLE hProcess = NULL;				//保存被hook程序的进程句柄
 BOOL bIsInjected = FALSE;			//是否已经注入了进程
 BOOL bHook = FALSE;					//是否Hook了API
+BOOL isHookGuanJia = FALSE;			//本工具是否hook了管家
+LPCTSTR  showGuanJiaClass = _T("BaiduBaoheFrameWorkWndClassName");		//百度云管家  控制主窗口 弹出与否的窗体类
+LPCTSTR  GuanJiaProcessName = _T("baiduyunguanjia.exe");			//百度云管家 的进程名
 
 typedef BOOL(WINAPI *playsoundW)(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 playsoundW oldPlaySoundW = NULL;		//用于保存原函数地址
 FARPROC pfoldPlaySoundW = NULL;			//指向原函数地址的远指针
 BYTE OldCodeW[5];					//老的系统API入口代码
 BYTE NewCodeW[5];					//要跳转的API代码 (jmp xxxx)
-POINT pos = { 0 };				//目标鼠标点击的相对坐标
+POINT pos = { 0 };				//目标鼠标点击的相对坐标(相对于窗体)
 bool isPaintLine = false;			//是否正在描窗体边框
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 int inject();
@@ -41,6 +45,9 @@ int HookOn();
 int HookOff();
 HWND GetHwndByPid(DWORD dwProcessID);
 int SetClickPos();
+INT GetProcessNameByPID(DWORD pid, LPTSTR processName);		//VC根据进程名获得进程ID		
+int SendClick(HWND wnd, POINT cxPos);					//模拟点击函数								
+unsigned int __stdcall AutoClick(PVOID wnd);						//自动点击, 调用 SendClick(HWND wnd, POINT cxPos)函数
 unsigned int __stdcall PaintLine(PVOID ppoint);
 unsigned int __stdcall SetPosThreadFun(PVOID pM);
 
@@ -64,7 +71,7 @@ unsigned int __stdcall SetPosThreadFun(PVOID pM)
 
 		TCHAR name[MAX_PATH], confirm[MAX_PATH];
 		GetWindowText(g_hWnd, name, MAX_PATH);
-		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:%S\n点击坐标:窗口中的红点\n\n是否确定 目的窗口 和 目的坐标？"), name);
+		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:  %S\n点击坐标:  窗口中的红点\n\n是否确定 目标窗口 和 目标坐标？"), name);
 		
 		isPaintLine = TRUE;
 		//创建描边框线程
@@ -95,7 +102,7 @@ unsigned int __stdcall PaintLine(PVOID ppoint)
 	while (TRUE == isPaintLine)
 	{
 		HDC hdc = GetWindowDC(GetDesktopWindow());
-		HPEN hpen = CreatePen(PS_SOLID, 5, RGB(255, 0, 0));
+		HPEN hpen = CreatePen(PS_SOLID, 8, RGB(255, 0, 0));
 		HGDIOBJ  holdPen = SelectObject(hdc, hpen);
 		POINT point = { 0 };	//鼠标点击的坐标
 		POINT oldPoint = {0};
@@ -128,7 +135,7 @@ unsigned int __stdcall PaintLine(PVOID ppoint)
 		SelectObject(hdc, holdPen);
 		DeleteObject(hpen);
 		ReleaseDC(GetDesktopWindow(), hdc);
-		Sleep(400);
+		Sleep(200);
 	}
 	return TRUE;
 }
@@ -143,21 +150,62 @@ int SetClickPos()
 
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound)
 {
+	//恢复原进程的oldPlaySoundW()
 	HookOff();
-	MessageBox(NULL, _T("哈哈, 已经被hook了"), _T("hook success"), MB_OK);
 	INT res = oldPlaySoundW( pszSound,  hmod, fdwSound);
+	//发现 管家 上传异常, 开始模拟点击 继续
+	assert(_beginthreadex(NULL, 0, AutoClick, &g_hWnd, 0, NULL) >= 0);
+	//恢复hook.dll中的MyplaysoundW()
 	HookOn();
 	return res;
 }
 
-int AutoClick()
+//自动点击, 调用 SendClick(HWND wnd, POINT cxPos)函数
+unsigned int __stdcall AutoClick(PVOID wnd)
 {
-	
+	Sleep(800);
+	if (TRUE == isHookGuanJia)
+	{
+		//如果hook了管家, 要特殊的激活下窗体才能模拟点击
+		HWND hWnd2 = ::GetTopWindow(0);
+		TCHAR name2[100] = {0};
+		while (hWnd2)
+		{
+			GetClassName(hWnd2, name2, 100);
+			if (0 == _tcscmp(name2, showGuanJiaClass))
+			{
+				//如果窗体类名是showGuanJiaClass, 即"BaiduBaoheFrameWorkWndClassName", 
+				//激活百度管家
+				//以下数据 从spy工具监测云管家中所得
+				SendMessage(hWnd2, WM_USER + 1025, 0x200, 0);
+				Sleep(100);
+				SendMessage(hWnd2, WM_USER + 1025, 0x202, 0);
+				Sleep(100);
+				break;
+			}
+			hWnd2 = ::GetNextWindow(hWnd2, GW_HWNDNEXT);
+		}
+	}
+	//无论是否hook了管家, 开始模拟点击
+	::SetForegroundWindow((*(HWND*)wnd));
+	ShowWindow((*(HWND*)wnd), SW_HIDE);
+	Sleep(500);
+	SendClick((*(HWND*)wnd), pos);
+	return TRUE;
 }
 
-int SendClick()
+//模拟点击函数
+int SendClick(HWND wnd, POINT cxPos)
 {
-
+	//cxPos是相对于窗体的相对坐标		wnd是目的窗体
+	DWORD click = 0;
+	click = ((DWORD(cxPos.y)) << 16) | DWORD(cxPos.x);
+	//开始模拟点击
+	SendMessage(g_hWnd, WM_LBUTTONDOWN, MK_LBUTTON, click);
+	Sleep(100);
+	SendMessage(g_hWnd, WM_LBUTTONUP, 0, click);
+	Sleep(100);
+	return TRUE;
 }
 
 
@@ -267,31 +315,29 @@ int inject()
 	return TRUE;
 }
 
-//根据进程ID获取窗口句柄
-HWND GetHwndByPid(DWORD dwProcessID)
+//VC根据进程名获得进程ID
+INT GetProcessNameByPID(DWORD pid, LPTSTR processName)
 {
-	//返回Z序顶部的窗口句柄
-	HWND hWnd = ::GetTopWindow(0);
+	HANDLE snapshot;
+	PROCESSENTRY32 processinfo;
+	processinfo.dwSize = sizeof(processinfo);
+	snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot == NULL)
+		return FALSE;
 
-	while (hWnd)
+	BOOL status = Process32First(snapshot, &processinfo);
+	while (status)
 	{
-		DWORD pid = 0;
-		//根据窗口句柄获取进程ID
-		DWORD dwTheardId = ::GetWindowThreadProcessId(hWnd, &pid);
-
-		if (dwTheardId != 0)
+		if (processinfo.th32ProcessID == pid)
 		{
-			if (pid == dwProcessID)
-			{
-				return hWnd;
-			}
+			_tcscpy_s(processName, MAX_PATH, processinfo.szExeFile);
+			return TRUE;
 		}
-		//返回z序中的前一个或后一个窗口的句柄
-		hWnd = ::GetNextWindow(hWnd, GW_HWNDNEXT);
-
+		status = Process32Next(snapshot, &processinfo);
 	}
-	return hWnd;
+	return FALSE;
 }
+
 
 //dll的主函数, 任何加载dll和释放dll都要调用本函数
 BOOL WINAPI DllMain(
@@ -305,14 +351,25 @@ BOOL WINAPI DllMain(
 	case DLL_PROCESS_ATTACH:
 		// Initialize once for each new process.
 		// Return FALSE to fail DLL load.
-		hProcess = hinstDLL;
-		MessageBox(NULL, TEXT("进程 中 初始化\nDLL_PROCESS_ATTACH"), TEXT(""), MB_OK);
+		hInst = hinstDLL;
 		//获得dll 实例，进程句柄
 		hInst = ::GetModuleHandle(NULL);
 		dwPid = ::GetCurrentProcessId();
 		hProcess = OpenProcess(PROCESS_ALL_ACCESS, 0, dwPid);
+		TCHAR name[MAX_PATH];
+		if (GetProcessNameByPID(dwPid, name))
+		{
+			//检测是否hook了管家
+			if (0 == _tcscmp(name, GuanJiaProcessName))
+			{
+				isHookGuanJia = TRUE;
+			}
+				
+		}
+
 		//调用注射函数
 		inject();
+		//设置点击坐标和窗口
 		SetClickPos();
 		break;
 
@@ -329,7 +386,6 @@ BOOL WINAPI DllMain(
 	case DLL_PROCESS_DETACH:
 		// Perform any necessary cleanup.
 		HookOff();
-		MessageBox(NULL, TEXT("进程 中 清理工作\nDLL_PROCESS_DETACH"),TEXT(""), MB_OK);
 		break;
 	}
 	return TRUE;  // Successful DLL_PROCESS_ATTACH.		

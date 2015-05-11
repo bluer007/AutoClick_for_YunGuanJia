@@ -171,7 +171,6 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 	//this->enumProcess();		//刷新进程列表
 	CListBox *m_CListBox = ((CListBox*)GetDlgItem(IDC_LIST1));
 	CString str;
-	CString a;
 	BOOL isFind = FALSE;
 	int iadf = m_CListBox->GetCurSel();
 	if (LB_ERR == m_CListBox->GetCurSel() || 0 == m_CListBox->GetCurSel())
@@ -227,9 +226,7 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 		AfxMessageBox(_T("VirtualAllocEx()出错了"));
 		goto FINAL;
 	}
-	
-	a.Format(_T("%s"), DllPath);
-	AfxMessageBox(a.GetBuffer());
+
 	//向远程进程空间中写入DLL路径字符串
 	DWORD Size;
 	if (WriteProcessMemory(hRemoteProcess, pRemoteDllPath, DllPath, (_tcslen(DllPath) + 1) * sizeof(DllPath[0]), &Size) == NULL)
@@ -237,8 +234,6 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 		AfxMessageBox(_T("WriteProcessMemory()出错了"));
 		goto FINAL;
 	}
-	a.Format(L"%d", Size);
-	AfxMessageBox(a.GetBuffer());
 	//获得远程进程中LoadLibrary()的地址
 	LPTHREAD_START_ROUTINE pLoadLibrary = (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "LoadLibraryW");
 	if (pLoadLibrary == NULL)
