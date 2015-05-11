@@ -66,6 +66,7 @@ BEGIN_MESSAGE_MAP(C自动点击界面端Dlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 ON_BN_CLICKED(IDOK, &C自动点击界面端Dlg::OnBnClickedOk)
+ON_BN_CLICKED(IDC_BUTTON1, &C自动点击界面端Dlg::OnBnClickedButton1)
 END_MESSAGE_MAP()
 
 
@@ -346,4 +347,12 @@ int C自动点击界面端Dlg::EnableDebugPriv(LPCTSTR name)		//提升本程序权限
 	}
 
 	return TRUE;
+}
+
+void C自动点击界面端Dlg::OnBnClickedButton1()
+{
+	// TODO:  在此添加控件通知处理程序代码
+	CListBox *m_CListBox = ((CListBox*)GetDlgItem(IDC_LIST1));
+	m_CListBox->ResetContent();
+	this->enumProcess();		//刷新进程列表
 }

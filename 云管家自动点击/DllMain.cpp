@@ -10,11 +10,12 @@
 #include <windows.h>
 #include <tchar.h>
 #include <assert.h>
+#include <process.h>
+
 
 //全局共享变量
 #pragma data_seg(".Share")
 	HWND g_hWnd = NULL;			//主窗口句柄;
-	HHOOK hhk = NULL;			//鼠标钩子句柄;
 	HINSTANCE hInst = NULL;		//本dll实例句柄;
 #pragma data_seg()
 #pragma comment(linker, "/section:.Share,rws")
@@ -32,11 +33,113 @@ playsoundW oldPlaySoundW = NULL;		//用于保存原函数地址
 FARPROC pfoldPlaySoundW = NULL;			//指向原函数地址的远指针
 BYTE OldCodeW[5];					//老的系统API入口代码
 BYTE NewCodeW[5];					//要跳转的API代码 (jmp xxxx)
+POINT pos = { 0 };				//目标鼠标点击的相对坐标
+bool isPaintLine = false;			//是否正在描窗体边框
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 int inject();
 int HookOn();
 int HookOff();
+HWND GetHwndByPid(DWORD dwProcessID);
+int SetClickPos();
+unsigned int __stdcall PaintLine(PVOID ppoint);
+unsigned int __stdcall SetPosThreadFun(PVOID pM);
 
+//设置点击坐标的子线程
+unsigned int __stdcall SetPosThreadFun(PVOID pM)
+{
+	while (1)
+	{
+		MessageBox(NULL, _T("开始设置点击坐标\n请在 5s 内移动到 目标窗口 的 目标坐标"), _T("提醒"), MB_OK);
+		Sleep(5000);
+		POINT point = { 0 };		//鼠标绝对坐标
+		//获取鼠标坐标和 所在窗口
+		GetCursorPos(&point);
+		g_hWnd = WindowFromPoint(point);
+		RECT rect = {0};
+		//获得窗体大小和坐标
+		GetWindowRect(g_hWnd, &rect);
+		//计算鼠标在窗体中的相对坐标
+		pos.x = point.x - rect.left;
+		pos.y = point.y - rect.top;
+
+		TCHAR name[MAX_PATH], confirm[MAX_PATH];
+		GetWindowText(g_hWnd, name, MAX_PATH);
+		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:%S\n点击坐标:窗口中的红点\n\n是否确定 目的窗口 和 目的坐标？"), name);
+		
+		isPaintLine = TRUE;
+		//创建描边框线程
+		assert(_beginthreadex(NULL, 0, PaintLine, &pos, 0, NULL) >= 0);
+
+		if (MessageBox(NULL, confirm, _T("确认"), MB_YESNO) == IDYES)
+		{
+			isPaintLine = FALSE;
+			::InvalidateRect(NULL, NULL, TRUE);
+			break;
+		}
+		else
+		{
+			//因为本函数 有5s的睡眠, 所以让子线程退出
+			isPaintLine = FALSE;
+			::InvalidateRect(NULL, NULL, TRUE);
+		}
+	}
+	return TRUE;
+}
+
+//描出选中窗口边框
+unsigned int __stdcall PaintLine(PVOID ppoint)
+{
+	Sleep(300);		//等待SetPosThreadFun()中的messagebox()出现
+	static RECT rect = { 0 };
+	RECT preRect = {0};		//记录上一次窗体的大小和坐标情况
+	while (TRUE == isPaintLine)
+	{
+		HDC hdc = GetWindowDC(GetDesktopWindow());
+		HPEN hpen = CreatePen(PS_SOLID, 5, RGB(255, 0, 0));
+		HGDIOBJ  holdPen = SelectObject(hdc, hpen);
+		POINT point = { 0 };	//鼠标点击的坐标
+		POINT oldPoint = {0};
+		//记录上一次窗体的大小和坐标情况
+		memcpy_s(&preRect, sizeof(preRect), &rect, sizeof(rect));	
+		//获得窗体  当前大小和坐标
+		GetWindowRect(g_hWnd, &rect);
+		if (0 != memcmp(&preRect, &rect, sizeof(RECT)))
+		{
+			//上次坐标和当前窗体坐标不同, 所以刷新桌面, 让上次描的边框消失
+			//RedrawWindow(NULL, NULL, NULL, RDW_UPDATENOW);
+			::InvalidateRect(NULL, NULL, FALSE);
+		}
+
+		point.x = rect.left + pos.x;
+		point.y = rect.top + pos.y;
+		//上边
+		MoveToEx(hdc, rect.left, rect.top, &oldPoint);
+		LineTo(hdc, rect.right, rect.top);
+		//右边
+		LineTo(hdc, rect.right, rect.bottom);
+		//下边
+		LineTo(hdc, rect.left, rect.bottom);
+		//左边
+		LineTo(hdc, rect.left, rect.top);
+		//点击的坐标
+		MoveToEx(hdc, point.x, point.y, &oldPoint);
+		LineTo(hdc, point.x, point.y);
+
+		SelectObject(hdc, holdPen);
+		DeleteObject(hpen);
+		ReleaseDC(GetDesktopWindow(), hdc);
+		Sleep(400);
+	}
+	return TRUE;
+}
+
+//设置点击坐标
+int SetClickPos()
+{
+	//创建线程
+	assert(_beginthreadex(NULL, 0, SetPosThreadFun, NULL, 0, NULL) >= 0);
+	return TRUE;
+}
 
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound)
 {
@@ -45,6 +148,16 @@ BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound)
 	INT res = oldPlaySoundW( pszSound,  hmod, fdwSound);
 	HookOn();
 	return res;
+}
+
+int AutoClick()
+{
+	
+}
+
+int SendClick()
+{
+
 }
 
 
@@ -154,7 +267,31 @@ int inject()
 	return TRUE;
 }
 
+//根据进程ID获取窗口句柄
+HWND GetHwndByPid(DWORD dwProcessID)
+{
+	//返回Z序顶部的窗口句柄
+	HWND hWnd = ::GetTopWindow(0);
 
+	while (hWnd)
+	{
+		DWORD pid = 0;
+		//根据窗口句柄获取进程ID
+		DWORD dwTheardId = ::GetWindowThreadProcessId(hWnd, &pid);
+
+		if (dwTheardId != 0)
+		{
+			if (pid == dwProcessID)
+			{
+				return hWnd;
+			}
+		}
+		//返回z序中的前一个或后一个窗口的句柄
+		hWnd = ::GetNextWindow(hWnd, GW_HWNDNEXT);
+
+	}
+	return hWnd;
+}
 
 //dll的主函数, 任何加载dll和释放dll都要调用本函数
 BOOL WINAPI DllMain(
@@ -176,6 +313,7 @@ BOOL WINAPI DllMain(
 		hProcess = OpenProcess(PROCESS_ALL_ACCESS, 0, dwPid);
 		//调用注射函数
 		inject();
+		SetClickPos();
 		break;
 
 	//case DLL_THREAD_ATTACH:
