@@ -56,7 +56,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\自动点击界面端.ico">
+    <Image Include="res\ico.ico">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>

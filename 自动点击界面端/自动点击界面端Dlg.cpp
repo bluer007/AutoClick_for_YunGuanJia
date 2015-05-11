@@ -106,10 +106,6 @@ BOOL C自动点击界面端Dlg::OnInitDialog()
 	i = this->enumProcess();
 
 
-
-
-
-
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
@@ -179,11 +175,13 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 		for (int i = m_CListBox->GetCount(); i; i--)
 		{
 			m_CListBox->GetText(i-1, str);	
+			//将str转成小写
+			str.MakeLower();
 			if (str.Find(_T("baiduyunguanjia.exe")) >= 0)
 			{
 				//即匹配到 管家 的进程
 				//开始提取pid
-				str = str.Right(str.GetLength() - str.Find(_T("PID")) - 4);
+				str = str.Right(str.GetLength() - str.Find(_T("pid")) - 4);
 				str.Format(_T("%d"), _ttol(str.GetBuffer()));
 				isFind = TRUE;
 				break;
@@ -210,7 +208,7 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 
 	//调用OpenProcess()获得句柄
 	HANDLE hRemoteProcess;
-	if ((hRemoteProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, _ttol(str.GetBuffer()))) == NULL)
+	if ((hRemoteProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE, FALSE, _ttol(str.GetBuffer()))) == NULL)
 	{
 		AfxMessageBox(_T("OpenProcess()其他进程出错了"));
 		goto FINAL;
@@ -251,6 +249,9 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 	}
 	else
 	{
+		//最小化自身窗口, 方便hook了的窗口工作
+		ShowWindow(SW_MINIMIZE);
+		//等待远程线程
 		WaitForSingleObject(hThread, INFINITE);
 		//printf("dwThreadId is %d\n\n", dwThreadId);
 		//printf("Inject is done\n");

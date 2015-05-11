@@ -32,21 +32,26 @@ BOOL isHookGuanJia = FALSE;			//本工具是否hook了管家
 LPCTSTR  showGuanJiaClass = _T("BaiduBaoheFrameWorkWndClassName");		//百度云管家  控制主窗口 弹出与否的窗体类
 LPCTSTR  GuanJiaProcessName = _T("baiduyunguanjia.exe");			//百度云管家 的进程名
 
+struct MY_POINT					//记录目标鼠标点击的相对坐标的比例值结构
+{
+	double x_percent;			//目标相对坐标X的比例值
+	double y_percent;			//目标相对坐标Y的比例值
+};
+
 typedef BOOL(WINAPI *playsoundW)(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 playsoundW oldPlaySoundW = NULL;		//用于保存原函数地址
 FARPROC pfoldPlaySoundW = NULL;			//指向原函数地址的远指针
 BYTE OldCodeW[5];					//老的系统API入口代码
 BYTE NewCodeW[5];					//要跳转的API代码 (jmp xxxx)
-POINT pos = { 0 };				//目标鼠标点击的相对坐标(相对于窗体)
+MY_POINT pos = { 0 };				//目标鼠标点击的相对坐标的比例值(相对于窗体)
 bool isPaintLine = false;			//是否正在描窗体边框
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 int inject();
 int HookOn();
 int HookOff();
-HWND GetHwndByPid(DWORD dwProcessID);
 int SetClickPos();
 INT GetProcessNameByPID(DWORD pid, LPTSTR processName);		//VC根据进程名获得进程ID		
-int SendClick(HWND wnd, POINT cxPos);					//模拟点击函数								
+int SendClick(HWND wnd, MY_POINT cxPos);					//模拟点击函数								
 unsigned int __stdcall AutoClick(PVOID wnd);						//自动点击, 调用 SendClick(HWND wnd, POINT cxPos)函数
 unsigned int __stdcall PaintLine(PVOID ppoint);
 unsigned int __stdcall SetPosThreadFun(PVOID pM);
@@ -65,13 +70,13 @@ unsigned int __stdcall SetPosThreadFun(PVOID pM)
 		RECT rect = {0};
 		//获得窗体大小和坐标
 		GetWindowRect(g_hWnd, &rect);
-		//计算鼠标在窗体中的相对坐标
-		pos.x = point.x - rect.left;
-		pos.y = point.y - rect.top;
+		//计算鼠标在窗体中的相对坐标的比例值
+		pos.x_percent = (point.x - rect.left) / double(rect.right - rect.left);
+		pos.y_percent = (point.y - rect.top) / double(rect.bottom - rect.top);
 
 		TCHAR name[MAX_PATH], confirm[MAX_PATH];
 		GetWindowText(g_hWnd, name, MAX_PATH);
-		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:  %S\n点击坐标:  窗口中的红点\n\n是否确定 目标窗口 和 目标坐标？"), name);
+		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:  %S\n点击坐标:  窗口中的红点\n\n一旦确定, 只有重新运行目标程序才能修正 目标坐标\n\n是否确定 目标窗口 和 目标坐标？"), name);
 		
 		isPaintLine = TRUE;
 		//创建描边框线程
@@ -117,8 +122,8 @@ unsigned int __stdcall PaintLine(PVOID ppoint)
 			::InvalidateRect(NULL, NULL, FALSE);
 		}
 
-		point.x = rect.left + pos.x;
-		point.y = rect.top + pos.y;
+		point.x = double(rect.right - rect.left) * pos.x_percent + double(rect.left);
+		point.y = double(rect.bottom - rect.top) * pos.y_percent + double(rect.top);
 		//上边
 		MoveToEx(hdc, rect.left, rect.top, &oldPoint);
 		LineTo(hdc, rect.right, rect.top);
@@ -160,7 +165,7 @@ BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound)
 	return res;
 }
 
-//自动点击, 调用 SendClick(HWND wnd, POINT cxPos)函数
+//自动点击, 调用 SendClick(HWND wnd, MY_POINT cxPos)函数
 unsigned int __stdcall AutoClick(PVOID wnd)
 {
 	Sleep(800);
@@ -181,25 +186,40 @@ unsigned int __stdcall AutoClick(PVOID wnd)
 				Sleep(100);
 				SendMessage(hWnd2, WM_USER + 1025, 0x202, 0);
 				Sleep(100);
+				//如果是管家, 则隐藏窗口, 即回到托盘栏
+				::SetForegroundWindow((*(HWND*)wnd));
+				ShowWindow((*(HWND*)wnd), SW_HIDE);
+				Sleep(500);
 				break;
 			}
 			hWnd2 = ::GetNextWindow(hWnd2, GW_HWNDNEXT);
 		}
 	}
+	else
+	{
+		//如果是其他程序, 则最小化
+		::SetForegroundWindow((*(HWND*)wnd));
+		ShowWindow((*(HWND*)wnd), SW_MINIMIZE);
+		Sleep(500);
+	}
 	//无论是否hook了管家, 开始模拟点击
-	::SetForegroundWindow((*(HWND*)wnd));
-	ShowWindow((*(HWND*)wnd), SW_HIDE);
-	Sleep(500);
+
 	SendClick((*(HWND*)wnd), pos);
 	return TRUE;
 }
 
 //模拟点击函数
-int SendClick(HWND wnd, POINT cxPos)
+int SendClick(HWND wnd, MY_POINT cxPos)
 {
-	//cxPos是相对于窗体的相对坐标		wnd是目的窗体
+	//cxPos是相对于窗体的相对坐标的比例值		wnd是目的窗体
 	DWORD click = 0;
-	click = ((DWORD(cxPos.y)) << 16) | DWORD(cxPos.x);
+	RECT rect = {0};
+	GetWindowRect(wnd, &rect);
+	//根据比例值 计算 相对坐标
+	DWORD cx = DWORD(double(rect.right - rect.left) * cxPos.x_percent);
+	DWORD cy = DWORD(double(rect.bottom - rect.top) * cxPos.y_percent);
+
+	click = ((DWORD(cy)) << 16) | DWORD(cx);
 	//开始模拟点击
 	SendMessage(g_hWnd, WM_LBUTTONDOWN, MK_LBUTTON, click);
 	Sleep(100);
@@ -355,10 +375,12 @@ BOOL WINAPI DllMain(
 		//获得dll 实例，进程句柄
 		hInst = ::GetModuleHandle(NULL);
 		dwPid = ::GetCurrentProcessId();
-		hProcess = OpenProcess(PROCESS_ALL_ACCESS, 0, dwPid);
+		hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE, 0, dwPid);		//		XP下不能用PROCESS_ALL_ACCESS
 		TCHAR name[MAX_PATH];
 		if (GetProcessNameByPID(dwPid, name))
 		{
+			//把进程名字转成小写
+			_tcslwr_s(name, MAX_PATH);
 			//检测是否hook了管家
 			if (0 == _tcscmp(name, GuanJiaProcessName))
 			{
