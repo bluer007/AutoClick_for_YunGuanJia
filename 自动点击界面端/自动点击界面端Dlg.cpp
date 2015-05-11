@@ -208,7 +208,7 @@ void C自动点击界面端Dlg::OnBnClickedOk()
 
 	//调用OpenProcess()获得句柄
 	HANDLE hRemoteProcess;
-	if ((hRemoteProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE, FALSE, _ttol(str.GetBuffer()))) == NULL)
+	if ((hRemoteProcess = OpenProcess(PROCESS_ALL_ACCESS , FALSE, _ttol(str.GetBuffer()))) == NULL)
 	{
 		AfxMessageBox(_T("OpenProcess()其他进程出错了"));
 		goto FINAL;
