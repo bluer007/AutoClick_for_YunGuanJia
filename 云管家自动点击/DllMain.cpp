@@ -76,12 +76,12 @@ unsigned int __stdcall SetPosThreadFun(PVOID pM)
 
 		TCHAR name[MAX_PATH], confirm[MAX_PATH];
 		GetWindowText(g_hWnd, name, MAX_PATH);
-		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:  %S\n点击坐标:  窗口中的红点\n\n一旦确定, 只有重新运行目标程序才能修正 目标坐标\n\n是否确定 目标窗口 和 目标坐标？"), name);
+		_stprintf_s(confirm, MAX_PATH, _T("窗口标题:  %s\n点击坐标:  窗口中的红点\n\n一旦确定, 只有重新运行目标程序才能修正 目标坐标\n\n是否确定 目标窗口 和 目标坐标？"), name);
 		
 		isPaintLine = TRUE;
 		//创建描边框线程
-		assert(_beginthreadex(NULL, 0, PaintLine, &pos, 0, NULL) >= 0);
-
+		assert(CloseHandle((HANDLE)_beginthreadex(NULL, 0, PaintLine, &pos, 0, NULL)) > 0);
+		
 		if (MessageBox(NULL, confirm, _T("确认"), MB_YESNO) == IDYES)
 		{
 			isPaintLine = FALSE;
@@ -149,7 +149,7 @@ unsigned int __stdcall PaintLine(PVOID ppoint)
 int SetClickPos()
 {
 	//创建线程
-	assert(_beginthreadex(NULL, 0, SetPosThreadFun, NULL, 0, NULL) >= 0);
+	assert(CloseHandle((HANDLE)_beginthreadex(NULL, 0, SetPosThreadFun, NULL, 0, NULL)) > 0);
 	return TRUE;
 }
 
@@ -159,7 +159,7 @@ BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound)
 	HookOff();
 	INT res = oldPlaySoundW( pszSound,  hmod, fdwSound);
 	//发现 管家 上传异常, 开始模拟点击 继续
-	assert(_beginthreadex(NULL, 0, AutoClick, &g_hWnd, 0, NULL) >= 0);
+	assert(CloseHandle((HANDLE)_beginthreadex(NULL, 0, AutoClick, &g_hWnd, 0, NULL)) > 0);
 	//恢复hook.dll中的MyplaysoundW()
 	HookOn();
 	return res;
