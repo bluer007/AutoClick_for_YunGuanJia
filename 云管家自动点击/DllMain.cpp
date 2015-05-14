@@ -45,6 +45,7 @@ BYTE OldCodeW[5];					//老的系统API入口代码
 BYTE NewCodeW[5];					//要跳转的API代码 (jmp xxxx)
 MY_POINT pos = { 0 };				//目标鼠标点击的相对坐标的比例值(相对于窗体)
 bool isPaintLine = false;			//是否正在描窗体边框
+HMODULE hmod = NULL;				//保存加载WINMM.DLL的句柄
 BOOL  WINAPI MyplaysoundW(LPCSTR pszSound, HMODULE hmod, DWORD fdwSound);
 int inject();
 int HookOn();
@@ -299,7 +300,7 @@ int inject()
 		bIsInjected = TRUE;
 
 		//获取函数
-		HMODULE hmod = ::LoadLibrary(_T("WINMM.DLL"));
+		hmod = ::LoadLibrary(_T("WINMM.DLL"));
 		oldPlaySoundW = (playsoundW)::GetProcAddress(hmod, "PlaySoundW");
 		pfoldPlaySoundW = (FARPROC)oldPlaySoundW;
 		if (pfoldPlaySoundW == NULL)
@@ -407,7 +408,8 @@ BOOL WINAPI DllMain(
 
 	case DLL_PROCESS_DETACH:
 		// Perform any necessary cleanup.
-		HookOff();
+		HookOff();			//恢复目标程序以前的函数调用
+		if(bIsInjected)	FreeLibrary(hmod);		//释放WINMM.DLL的句柄
 		break;
 	}
 	return TRUE;  // Successful DLL_PROCESS_ATTACH.		
